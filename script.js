@@ -1,5 +1,5 @@
-const board = document.getElementById("chessboard");
-const moveHistoryList = document.getElementById("move-history");
+const boardElement = document.getElementById("chessboard");
+const historyList = document.getElementById("move-history");
 
 const whiteTimeEl = document.getElementById("white-time");
 const blackTimeEl = document.getElementById("black-time");
@@ -11,296 +11,203 @@ const flipBtn = document.getElementById("flip");
 const botBtn = document.getElementById("play-bot");
 const pvpBtn = document.getElementById("play-pvp");
 
-let boardState = [];
-let selected = null;
-let currentPlayer = "white";
-let gameMode = "pvp"; // or "bot"
+let game = new Chess();
+let selectedSquare = null;
 let flipped = false;
-let history = [];
-let timer;
+let gameMode = "pvp"; // 'pvp' or 'bot'
+let moveHistory = [];
+let timerInterval = null;
 let whiteSeconds = 600;
 let blackSeconds = 600;
 
 const PIECES = {
-  wK: "♔", wQ: "♕", wR: "♖", wB: "♗", wN: "♘", wP: "♙",
-  bK: "♚", bQ: "♛", bR: "♜", bB: "♝", bN: "♞", bP: "♟",
+  p: "♟", r: "♜", n: "♞", b: "♝", q: "♛", k: "♚",
+  P: "♙", R: "♖", N: "♘", B: "♗", Q: "♕", K: "♔"
 };
 
-const initialBoard = [
-  ["bR","bN","bB","bQ","bK","bB","bN","bR"],
-  ["bP","bP","bP","bP","bP","bP","bP","bP"],
-  ["","","","","","","",""],
-  ["","","","","","","",""],
-  ["","","","","","","",""],
-  ["","","","","","","",""],
-  ["wP","wP","wP","wP","wP","wP","wP","wP"],
-  ["wR","wN","wB","wQ","wK","wB","wN","wR"]
-];
-
 function createBoard() {
-  board.innerHTML = "";
-  for (let row = 0; row < 8; row++) {
-    boardState[row] = [];
-    for (let col = 0; col < 8; col++) {
+  boardElement.innerHTML = "";
+  const squares = [];
+
+  for (let r = 0; r < 8; r++) {
+    for (let c = 0; c < 8; c++) {
       const square = document.createElement("div");
       square.classList.add("square");
-      square.classList.add((row + col) % 2 === 0 ? "white" : "black");
-      square.dataset.row = row;
-      square.dataset.col = col;
 
-      const piece = initialBoard[row][col];
-      boardState[row][col] = piece;
-      if (piece) square.textContent = PIECES[piece];
+      const boardRow = flipped ? 7 - r : r;
+      const boardCol = flipped ? 7 - c : c;
+      const color = (boardRow + boardCol) % 2 === 0 ? "white" : "black";
+      square.classList.add(color);
+      square.dataset.row = boardRow;
+      square.dataset.col = boardCol;
 
-      square.addEventListener("click", handleClick);
-      board.appendChild(square);
+      const squareName = getSquareName(boardRow, boardCol);
+      const piece = game.get(squareName)?.type;
+      const pieceColor = game.get(squareName)?.color;
+      if (piece) {
+        square.textContent = PIECES[pieceColor === "w" ? piece.toUpperCase() : piece.toLowerCase()];
+      }
+
+      square.addEventListener("click", () => onSquareClick(boardRow, boardCol));
+      squares.push(square);
+      boardElement.appendChild(square);
     }
   }
-  resetTimer();
-  startTimer();
-  history = [];
-  updateHistory();
 }
 
-function handleClick(e) {
-  const row = +e.target.dataset.row;
-  const col = +e.target.dataset.col;
-  const piece = boardState[row][col];
+function onSquareClick(row, col) {
+  const square = getSquareName(row, col);
 
-  if (selected) {
-    movePiece(selected, { row, col });
-    selected = null;
-    clearHighlights();
-    return;
-  }
+  if (selectedSquare) {
+    const move = game.move({ from: selectedSquare, to: square, promotion: "q" });
 
-  if (piece && piece[0] === currentPlayer[0]) {
-    selected = { row, col };
-    highlightMoves(row, col);
-  }
-}
+    if (move) {
+      moveHistory.push(move);
+      updateHistory();
+      selectedSquare = null;
+      clearHighlights();
+      createBoard();
+      updateTimer();
+      checkGameOver();
 
-function movePiece(from, to) {
-  const piece = boardState[from.row][from.col];
-  const captured = boardState[to.row][to.col];
-
-  if (piece[0] !== currentPlayer[0]) return;
-
-  history.push({ from, to, piece, captured });
-  boardState[to.row][to.col] = piece;
-  boardState[from.row][from.col] = "";
-
-  renderBoard();
-  switchPlayer();
-
-  updateHistory();
-
-  if (gameMode === "bot" && currentPlayer === "black") {
-    setTimeout(botMove, 800);
+      if (gameMode === "bot" && game.turn() === "b") {
+        setTimeout(botMove, 500);
+      }
+    } else {
+      selectedSquare = null;
+      clearHighlights();
+    }
+  } else {
+    const piece = game.get(square);
+    if (piece && piece.color === game.turn()) {
+      selectedSquare = square;
+      highlightMoves(square);
+    }
   }
 }
 
-function renderBoard() {
-  [...document.querySelectorAll(".square")].forEach(square => {
-    const r = +square.dataset.row;
-    const c = +square.dataset.col;
-    const piece = boardState[r][c];
-    square.textContent = piece ? PIECES[piece] : "";
-  });
+function getSquareName(row, col) {
+  const files = "abcdefgh";
+  return files[col] + (8 - row);
 }
 
-function highlightMoves(row, col) {
+function highlightMoves(square) {
   clearHighlights();
-  const moves = getPseudoMoves(row, col);
-  moves.forEach(({ row, col }) => {
-    const square = getSquare(row, col);
-    if (square) square.classList.add("valid-move");
+  const moves = game.moves({ square, verbose: true });
+  moves.forEach(m => {
+    const sq = document.querySelector(`[data-row="${8 - m.to[1]}"][data-col="${m.to.charCodeAt(0) - 97}"]`);
+    if (sq) sq.classList.add("valid-move");
   });
-  getSquare(row, col).classList.add("selected");
-}
-
-function getPseudoMoves(row, col) {
-  const piece = boardState[row][col];
-  const type = piece[1];
-  const color = piece[0];
-  const moves = [];
-
-  const directions = {
-    N: [[-2,-1], [-2,1], [-1,-2], [-1,2], [1,-2], [1,2], [2,-1], [2,1]],
-    B: [[-1,-1],[1,1],[1,-1],[-1,1]],
-    R: [[-1,0],[1,0],[0,-1],[0,1]],
-    Q: [[-1,-1],[1,1],[1,-1],[-1,1],[-1,0],[1,0],[0,-1],[0,1]],
-    K: [[-1,-1],[1,1],[1,-1],[-1,1],[-1,0],[1,0],[0,-1],[0,1]]
-  };
-
-  if (type === "N") {
-    directions.N.forEach(([dr, dc]) => {
-      const [r, c] = [row + dr, col + dc];
-      if (valid(r, c) && (!boardState[r][c] || boardState[r][c][0] !== color)) {
-        moves.push({ row: r, col: c });
-      }
-    });
-  } else if (type === "B" || type === "R" || type === "Q") {
-    directions[type].forEach(([dr, dc]) => {
-      let r = row + dr;
-      let c = col + dc;
-      while (valid(r, c)) {
-        if (!boardState[r][c]) {
-          moves.push({ row: r, col: c });
-        } else {
-          if (boardState[r][c][0] !== color) moves.push({ row: r, col: c });
-          break;
-        }
-        r += dr;
-        c += dc;
-      }
-    });
-  } else if (type === "K") {
-    directions.K.forEach(([dr, dc]) => {
-      const r = row + dr, c = col + dc;
-      if (valid(r, c) && (!boardState[r][c] || boardState[r][c][0] !== color)) {
-        moves.push({ row: r, col: c });
-      }
-    });
-  } else if (type === "P") {
-    const dir = color === "w" ? -1 : 1;
-    if (valid(row + dir, col) && !boardState[row + dir][col]) {
-      moves.push({ row: row + dir, col });
-    }
-    if ((color === "w" && row === 6) || (color === "b" && row === 1)) {
-      if (!boardState[row + dir][col] && !boardState[row + 2 * dir][col]) {
-        moves.push({ row: row + 2 * dir, col });
-      }
-    }
-    [-1, 1].forEach(dc => {
-      const r = row + dir, c = col + dc;
-      if (valid(r, c) && boardState[r][c] && boardState[r][c][0] !== color) {
-        moves.push({ row: r, col: c });
-      }
-    });
-  }
-
-  return moves;
-}
-
-function valid(r, c) {
-  return r >= 0 && r < 8 && c >= 0 && c < 8;
-}
-
-function getSquare(row, col) {
-  return document.querySelector(`.square[data-row="${row}"][data-col="${col}"]`);
+  const selected = document.querySelector(`[data-row="${8 - square[1]}"][data-col="${square.charCodeAt(0) - 97}"]`);
+  if (selected) selected.classList.add("selected");
 }
 
 function clearHighlights() {
   document.querySelectorAll(".square").forEach(sq =>
-    sq.classList.remove("valid-move", "selected")
+    sq.classList.remove("selected", "valid-move")
   );
 }
 
-function switchPlayer() {
-  currentPlayer = currentPlayer === "white" ? "black" : "white";
-}
-
 function botMove() {
-  let options = [];
-  for (let r = 0; r < 8; r++) {
-    for (let c = 0; c < 8; c++) {
-      const piece = boardState[r][c];
-      if (piece && piece[0] === "b") {
-        const moves = getPseudoMoves(r, c);
-        moves.forEach(m => options.push({ from: { row: r, col: c }, to: m }));
-      }
-    }
-  }
-  if (options.length === 0) return;
-  const move = options[Math.floor(Math.random() * options.length)];
-  movePiece(move.from, move.to);
-}
+  if (game.game_over()) return;
 
-function undoMove() {
-  const last = history.pop();
-  if (!last) return;
-
-  boardState[last.from.row][last.from.col] = last.piece;
-  boardState[last.to.row][last.to.col] = last.captured;
-
-  currentPlayer = last.piece[0] === "w" ? "white" : "black";
-
-  renderBoard();
-  updateHistory();
-}
-
-function showHint() {
-  for (let r = 0; r < 8; r++) {
-    for (let c = 0; c < 8; c++) {
-      const piece = boardState[r][c];
-      if (piece && piece[0] === currentPlayer[0]) {
-        const moves = getPseudoMoves(r, c);
-        if (moves.length > 0) {
-          highlightMoves(r, c);
-          return;
-        }
-      }
-    }
+  const moves = game.moves({ verbose: true });
+  const move = moves[Math.floor(Math.random() * moves.length)];
+  if (move) {
+    game.move(move.san);
+    moveHistory.push(move);
+    updateHistory();
+    createBoard();
+    updateTimer();
+    checkGameOver();
   }
 }
 
 function updateHistory() {
-  moveHistoryList.innerHTML = "";
-  history.forEach((h, i) => {
+  historyList.innerHTML = "";
+  moveHistory.forEach((m, i) => {
     const li = document.createElement("li");
-    li.textContent = `${i + 1}. ${getSquareName(h.from)} → ${getSquareName(h.to)}`;
-    moveHistoryList.appendChild(li);
+    li.textContent = `${i + 1}. ${m.san}`;
+    historyList.appendChild(li);
   });
 }
 
-function getSquareName(pos) {
-  const file = "abcdefgh"[pos.col];
-  const rank = 8 - pos.row;
-  return `${file}${rank}`;
+function undoMove() {
+  game.undo();
+  game.undo(); // for bot mode: undo both player and bot
+  moveHistory.pop();
+  moveHistory.pop();
+  createBoard();
+  updateHistory();
 }
 
-function resetTimer() {
-  whiteSeconds = 600;
-  blackSeconds = 600;
-  updateTimeDisplay();
+function showHint() {
+  const moves = game.moves({ verbose: true });
+  const move = moves.find(m => m.color === game.turn());
+  if (move) {
+    highlightMoves(move.from);
+  }
 }
 
-function updateTimeDisplay() {
-  whiteTimeEl.textContent = formatTime(whiteSeconds);
-  blackTimeEl.textContent = formatTime(blackSeconds);
-  whiteTimeEl.classList.toggle("low", whiteSeconds <= 30 && currentPlayer === "white");
-  blackTimeEl.classList.toggle("low", blackSeconds <= 30 && currentPlayer === "black");
-}
-
-function startTimer() {
-  clearInterval(timer);
-  timer = setInterval(() => {
-    if (currentPlayer === "white") whiteSeconds--;
+function updateTimer() {
+  clearInterval(timerInterval);
+  timerInterval = setInterval(() => {
+    if (game.turn() === "w") whiteSeconds--;
     else blackSeconds--;
 
-    if (whiteSeconds <= 0 || blackSeconds <= 0) {
-      clearInterval(timer);
-      alert(`${currentPlayer === "white" ? "Black" : "White"} wins on time!`);
-    }
+    whiteTimeEl.textContent = formatTime(whiteSeconds);
+    blackTimeEl.textContent = formatTime(blackSeconds);
 
-    updateTimeDisplay();
+    whiteTimeEl.classList.toggle("low", whiteSeconds <= 30 && game.turn() === "w");
+    blackTimeEl.classList.toggle("low", blackSeconds <= 30 && game.turn() === "b");
+
+    if (whiteSeconds <= 0 || blackSeconds <= 0) {
+      clearInterval(timerInterval);
+      alert(`${game.turn() === "w" ? "Black" : "White"} wins by timeout!`);
+    }
   }, 1000);
 }
 
+function resetGame(mode = "pvp") {
+  game = new Chess();
+  selectedSquare = null;
+  moveHistory = [];
+  gameMode = mode;
+  whiteSeconds = 600;
+  blackSeconds = 600;
+  whiteTimeEl.textContent = "10:00";
+  blackTimeEl.textContent = "10:00";
+  updateHistory();
+  createBoard();
+  updateTimer();
+}
+
+function checkGameOver() {
+  if (game.in_checkmate()) {
+    clearInterval(timerInterval);
+    alert(`Checkmate! ${game.turn() === "w" ? "Black" : "White"} wins!`);
+  } else if (game.in_draw()) {
+    clearInterval(timerInterval);
+    alert("Draw!");
+  }
+}
+
+function formatTime(seconds) {
+  const m = Math.floor(seconds / 60);
+  const s = seconds % 60;
+  return `${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
+}
+
 // Event Listeners
-newGameBtn.addEventListener("click", createBoard);
+newGameBtn.addEventListener("click", () => resetGame(gameMode));
 undoBtn.addEventListener("click", undoMove);
 hintBtn.addEventListener("click", showHint);
-flipBtn.addEventListener("click", () => board.classList.toggle("flipped"));
-botBtn.addEventListener("click", () => {
-  gameMode = "bot";
+flipBtn.addEventListener("click", () => {
+  flipped = !flipped;
   createBoard();
 });
-pvpBtn.addEventListener("click", () => {
-  gameMode = "pvp";
-  createBoard();
-});
+botBtn.addEventListener("click", () => resetGame("bot"));
+pvpBtn.addEventListener("click", () => resetGame("pvp"));
 
-// Initialize game
-createBoard();
+// Start
+resetGame();
