@@ -27,29 +27,30 @@ const PIECES = {
 
 function createBoard() {
   boardElement.innerHTML = "";
-  const squares = [];
+  const gameBoard = game.board();
 
-  for (let r = 0; r < 8; r++) {
-    for (let c = 0; c < 8; c++) {
+  const rows = [...Array(8).keys()];
+  const cols = [...Array(8).keys()];
+
+  const displayRows = flipped ? rows : rows.slice().reverse();
+  const displayCols = flipped ? cols.slice().reverse() : cols;
+
+  for (let r of displayRows) {
+    for (let c of displayCols) {
       const square = document.createElement("div");
       square.classList.add("square");
-
-      const boardRow = flipped ? 7 - r : r;
-      const boardCol = flipped ? 7 - c : c;
-      const color = (boardRow + boardCol) % 2 === 0 ? "white" : "black";
+      const color = (r + c) % 2 === 0 ? "white" : "black";
       square.classList.add(color);
-      square.dataset.row = boardRow;
-      square.dataset.col = boardCol;
+      square.dataset.row = r;
+      square.dataset.col = c;
 
-      const squareName = getSquareName(boardRow, boardCol);
-      const piece = game.get(squareName)?.type;
-      const pieceColor = game.get(squareName)?.color;
+      const piece = gameBoard[r][c];
       if (piece) {
-        square.textContent = PIECES[pieceColor === "w" ? piece.toUpperCase() : piece.toLowerCase()];
+        const symbol = PIECES[piece.color === "w" ? piece.type.toUpperCase() : piece.type];
+        square.textContent = symbol;
       }
 
-      square.addEventListener("click", () => onSquareClick(boardRow, boardCol));
-      squares.push(square);
+      square.addEventListener("click", () => onSquareClick(r, c));
       boardElement.appendChild(square);
     }
   }
@@ -95,11 +96,19 @@ function highlightMoves(square) {
   clearHighlights();
   const moves = game.moves({ square, verbose: true });
   moves.forEach(m => {
-    const sq = document.querySelector(`[data-row="${8 - m.to[1]}"][data-col="${m.to.charCodeAt(0) - 97}"]`);
+    const [r, c] = squareToCoords(m.to);
+    const sq = document.querySelector(`[data-row="${r}"][data-col="${c}"]`);
     if (sq) sq.classList.add("valid-move");
   });
-  const selected = document.querySelector(`[data-row="${8 - square[1]}"][data-col="${square.charCodeAt(0) - 97}"]`);
+  const [sr, sc] = squareToCoords(square);
+  const selected = document.querySelector(`[data-row="${sr}"][data-col="${sc}"]`);
   if (selected) selected.classList.add("selected");
+}
+
+function squareToCoords(square) {
+  const file = square[0].charCodeAt(0) - 97;
+  const rank = 8 - parseInt(square[1]);
+  return [rank, file];
 }
 
 function clearHighlights() {
@@ -134,7 +143,7 @@ function updateHistory() {
 
 function undoMove() {
   game.undo();
-  game.undo(); // for bot mode: undo both player and bot
+  if (gameMode === "bot") game.undo(); // undo bot too
   moveHistory.pop();
   moveHistory.pop();
   createBoard();
@@ -209,5 +218,5 @@ flipBtn.addEventListener("click", () => {
 botBtn.addEventListener("click", () => resetGame("bot"));
 pvpBtn.addEventListener("click", () => resetGame("pvp"));
 
-// Start
+// Start the game
 resetGame();
