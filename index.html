@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>ChessMaster</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <header>
+    <h1>♔ ChessMaster</h1>
+    <p>Play against friends or challenge the bot!</p>
+  </header>
+
+  <main>
+    <section class="game-area">
+      <div id="chessboard" class="chessboard"></div>
+
+      <aside class="info-panel">
+        <div class="status">
+          <div class="player white">⬜ White: <span id="white-time">10:00</span></div>
+          <div class="player black">⬛ Black: <span id="black-time">10:00</span></div>
+        </div>
+
+        <div class="controls">
+          <button id="new-game">New Game</button>
+          <button id="undo">Undo</button>
+          <button id="hint">Hint</button>
+          <button id="flip">Flip Board</button>
+          <button id="play-bot">Play vs Bot</button>
+          <button id="play-pvp">Play PvP</button>
+        </div>
+
+        <div class="history">
+          <h3>Move History</h3>
+          <ul id="move-history"></ul>
+        </div>
+      </aside>
+    </section>
+  </main>
+
+  <footer>
+    <p>Made with ♟ by Chess Enthusiasts</p>
+  </footer>
+
+  <script src="script.js"></script>
+</body>
+</html>
